@@ -18,6 +18,8 @@ import {
   updateOrder,
 } from './database.js';
 
+const realtimeClients = new Set();
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -36,10 +38,37 @@ const asyncHandler = (handler) => (request, response, next) => {
   Promise.resolve(handler(request, response, next)).catch(next);
 };
 
+const broadcastRealtimeEvent = (event, payload = {}) => {
+  const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+
+  for (const client of realtimeClients) {
+    client.write(message);
+  }
+};
+
 app.use(cors({
   origin: allowedOrigins,
 }));
 app.use(express.json({ limit: '2mb' }));
+
+app.get('/api/events', (request, response) => {
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-cache, no-transform');
+  response.setHeader('Connection', 'keep-alive');
+  response.flushHeaders?.();
+
+  response.write('event: connected\ndata: {"ok":true}\n\n');
+  realtimeClients.add(response);
+
+  const keepAlive = setInterval(() => {
+    response.write(': keep-alive\n\n');
+  }, 25000);
+
+  request.on('close', () => {
+    clearInterval(keepAlive);
+    realtimeClients.delete(response);
+  });
+});
 
 app.get('/api/health', (_request, response) => {
   response.json({ ok: true });
@@ -56,16 +85,19 @@ app.get('/api/flavors', asyncHandler(async (request, response) => {
 
 app.post('/api/flavors', asyncHandler(async (request, response) => {
   const flavor = await createFlavor(request.body);
+  broadcastRealtimeEvent('flavors-changed', { action: 'created', id: flavor.id });
   response.status(201).json(flavor);
 }));
 
 app.patch('/api/flavors/:id', asyncHandler(async (request, response) => {
   const flavor = await updateFlavor(request.params.id, request.body);
+  broadcastRealtimeEvent('flavors-changed', { action: 'updated', id: flavor.id });
   response.json(flavor);
 }));
 
 app.delete('/api/flavors/:id', asyncHandler(async (request, response) => {
   await deleteFlavor(request.params.id);
+  broadcastRealtimeEvent('flavors-changed', { action: 'deleted', id: request.params.id });
   response.status(204).send();
 }));
 
@@ -86,16 +118,22 @@ app.get('/api/orders', asyncHandler(async (request, response) => {
 
 app.post('/api/orders', asyncHandler(async (request, response) => {
   const order = await createOrder(request.body);
+  broadcastRealtimeEvent('orders-changed', { action: 'created', id: order.id });
+  broadcastRealtimeEvent('flavors-changed', { action: 'stock-updated' });
   response.status(201).json(order);
 }));
 
 app.patch('/api/orders/:id', asyncHandler(async (request, response) => {
   const order = await updateOrder(request.params.id, request.body);
+  broadcastRealtimeEvent('orders-changed', { action: 'updated', id: order.id });
+  broadcastRealtimeEvent('flavors-changed', { action: 'stock-updated' });
   response.json(order);
 }));
 
 app.delete('/api/orders/:id', asyncHandler(async (request, response) => {
   await deleteOrder(request.params.id);
+  broadcastRealtimeEvent('orders-changed', { action: 'deleted', id: request.params.id });
+  broadcastRealtimeEvent('flavors-changed', { action: 'stock-updated' });
   response.status(204).send();
 }));
 

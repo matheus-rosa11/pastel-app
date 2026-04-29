@@ -66,6 +66,13 @@ const ptBR = {
     noAvailableFlavors: 'Nenhum sabor disponível. Cadastre sabores primeiro.',
     summary: 'Resumo',
     submit: 'Registrar Pedido',
+    payment: {
+      title: 'Pago?',
+      description: 'Confira o pedido de {{name}} antes de abrir a câmera.',
+      summaryTitle: 'Resumo para cobrança',
+      summaryLine: '{{count}}x de {{flavor}}',
+      confirm: 'Confirmar pagamento',
+    },
     camera: {
       title: 'Foto do Cliente',
       description: 'Abra a câmera traseira do celular para tirar uma foto e vincular ao pedido.',

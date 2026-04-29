@@ -66,6 +66,13 @@ const enUS = {
     noAvailableFlavors: 'No flavors available. Create flavors first.',
     summary: 'Summary',
     submit: 'Place Order',
+    payment: {
+      title: 'Paid?',
+      description: 'Review {{name}}\'s order before opening the camera.',
+      summaryTitle: 'Charge summary',
+      summaryLine: '{{count}}x of {{flavor}}',
+      confirm: 'Confirm payment',
+    },
     camera: {
       title: 'Customer Photo',
       description: 'Open the rear camera on the phone to take a photo and attach it to the order.',

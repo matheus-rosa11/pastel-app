@@ -82,6 +82,62 @@ function ConfirmacaoPedido({ pedido, onClose }) {
   );
 }
 
+function ConfirmacaoPagamento({ pedido, onCancel, onConfirm }) {
+  const { t } = useTranslation();
+
+  if (!pedido) {
+    return null;
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/70 p-4 flex items-center justify-center"
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ scale: 0.96, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.96, opacity: 0 }}
+        className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4">
+          <h2 className="text-xl font-black text-foreground">{t('orders.payment.title')}</h2>
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            {t('orders.payment.description', { name: pedido.nome_cliente })}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
+            {t('orders.payment.summaryTitle')}
+          </p>
+          <div className="mt-3 space-y-2">
+            {pedido.itens.map((item) => (
+              <div key={item.sabor_id} className="flex items-center justify-between gap-3 text-sm font-semibold">
+                <span className="text-foreground">{item.sabor_nome}</span>
+                <span className="font-black text-primary">{t('orders.payment.summaryLine', { count: item.quantidade, flavor: item.sabor_nome })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" className="flex-1 font-bold" onClick={onConfirm}>
+            {t('orders.payment.confirm')}
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function Pedidos() {
   const qc = useQueryClient();
   const { t } = useTranslation();
@@ -89,6 +145,7 @@ export default function Pedidos() {
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [confirmacao, setConfirmacao] = useState(null);
   const [pedidoPendente, setPedidoPendente] = useState(null);
+  const [isPaymentPromptOpen, setIsPaymentPromptOpen] = useState(false);
   const [isCaptureFlowOpen, setIsCaptureFlowOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -116,20 +173,10 @@ export default function Pedidos() {
           customerPhotoId = await saveOrderPhoto(customerPhotoBlob);
         }
 
-        const novo = await pastelApp.entities.Pedido.create({
+        return pastelApp.entities.Pedido.create({
           ...pedido,
           customer_photo_id: customerPhotoId,
         });
-
-        for (const item of pedido.itens) {
-          const sabor = sabores.find((s) => s.id === item.sabor_id);
-          if (sabor) {
-            const novaQtd = Math.max(0, (sabor.quantidade_disponivel ?? 0) - item.quantidade);
-            await pastelApp.entities.Sabor.update(sabor.id, { quantidade_disponivel: novaQtd });
-          }
-        }
-
-        return novo;
       } catch (error) {
         if (customerPhotoId) {
           await deleteOrderPhoto(customerPhotoId);
@@ -142,6 +189,7 @@ export default function Pedidos() {
       qc.invalidateQueries(['sabores']);
       stopCamera();
       setIsCaptureFlowOpen(false);
+      setIsPaymentPromptOpen(false);
       setPedidoPendente(null);
       setConfirmacao(novo);
       setNomeCliente('');
@@ -219,6 +267,11 @@ export default function Pedidos() {
     setCameraError('');
     setPedidoPendente(null);
     setIsCaptureFlowOpen(false);
+  };
+
+  const fecharConfirmacaoPagamento = () => {
+    setPedidoPendente(null);
+    setIsPaymentPromptOpen(false);
   };
 
   const updateCapturedPhotoUrl = (nextUrl) => {
@@ -342,12 +395,22 @@ export default function Pedidos() {
 
     limparFotoCapturada();
     setCameraError('');
+    stopCamera();
     setPedidoPendente({
       nome_cliente: nomeCliente.trim(),
       itens: itensSelecionados,
       numero_pedido: proximoNumero(),
       status: 'pendente',
     });
+    setIsPaymentPromptOpen(true);
+  };
+
+  const abrirFluxoCaptura = () => {
+    if (!pedidoPendente) {
+      return;
+    }
+
+    setIsPaymentPromptOpen(false);
     setIsCaptureFlowOpen(true);
   };
 
@@ -453,6 +516,14 @@ export default function Pedidos() {
       </form>
 
       <AnimatePresence>
+        {isPaymentPromptOpen && (
+          <ConfirmacaoPagamento
+            pedido={pedidoPendente}
+            onCancel={fecharConfirmacaoPagamento}
+            onConfirm={abrirFluxoCaptura}
+          />
+        )}
+
         {isCaptureFlowOpen && (
           <motion.div
             initial={{ opacity: 0 }}

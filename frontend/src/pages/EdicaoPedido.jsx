@@ -56,36 +56,6 @@ export default function EdicaoPedido() {
 
   const atualizar = useMutation({
     mutationFn: async ({ pedido, novoItens }) => {
-      // Calcular diferença de estoque por sabor
-      // itens originais ativos (antes da edição)
-      const itensOriginaisAtivos = (pedido.itens || []).filter(
-        (i) => i.status_item !== 'cancelado'
-      );
-      const qtdOriginal = {};
-      for (const i of itensOriginaisAtivos) {
-        qtdOriginal[i.sabor_id] = (qtdOriginal[i.sabor_id] || 0) + i.quantidade;
-      }
-      // nova quantidade por sabor (apenas ativos/adicionados)
-      const qtdNova = {};
-      for (const i of novoItens) {
-        if (i.status_item !== 'cancelado') {
-          qtdNova[i.sabor_id] = (qtdNova[i.sabor_id] || 0) + i.quantidade;
-        }
-      }
-      // Ajustar estoque: diferença = original - nova (positivo = devolver, negativo = consumir)
-      const todosSaborIds = new Set([...Object.keys(qtdOriginal), ...Object.keys(qtdNova)]);
-      for (const saborId of todosSaborIds) {
-        const orig = qtdOriginal[saborId] || 0;
-        const nova = qtdNova[saborId] || 0;
-        const diff = orig - nova; // positivo = devolver ao estoque
-        if (diff !== 0) {
-          const sabor = sabores.find((s) => s.id === saborId);
-          if (sabor) {
-            const novaQtdDisp = Math.max(0, (sabor.quantidade_disponivel ?? 0) + diff);
-            await pastelApp.entities.Sabor.update(saborId, { quantidade_disponivel: novaQtdDisp });
-          }
-        }
-      }
       await pastelApp.entities.Pedido.update(pedido.id, { itens: novoItens });
     },
     onSuccess: () => {
@@ -100,15 +70,6 @@ export default function EdicaoPedido() {
   const cancelar = useMutation({
     mutationFn: async (pedido) => {
       await pastelApp.entities.Pedido.update(pedido.id, { status: 'cancelado' });
-      // Devolver quantidades aos sabores (apenas itens que não foram cancelados individualmente)
-      for (const item of pedido.itens || []) {
-        if (item.status_item === 'cancelado') continue;
-        const sabor = sabores.find((s) => s.id === item.sabor_id);
-        if (sabor) {
-          const novaQtd = (sabor.quantidade_disponivel ?? 0) + item.quantidade;
-          await pastelApp.entities.Sabor.update(sabor.id, { quantidade_disponivel: novaQtd });
-        }
-      }
     },
     onSuccess: () => {
       qc.invalidateQueries(['pedidos-edicao']);

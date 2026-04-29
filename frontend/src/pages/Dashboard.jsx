@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   Bike,
-  Camera,
   ClipboardList,
   Flame,
   LayoutDashboard,
@@ -181,8 +180,6 @@ export default function Dashboard() {
   const pendingDelivery = pedidos.filter((pedido) => getDeliveryStatus(pedido) === 'pending_delivery').length;
   const deliveredOrders = pedidos.filter((pedido) => getDeliveryStatus(pedido) === 'delivered').length;
   const notDeliveredOrders = pedidos.filter((pedido) => getDeliveryStatus(pedido) === 'not_delivered').length;
-  const ordersWithPhoto = pedidos.filter((pedido) => Boolean(pedido.customer_photo_id)).length;
-
   const activePastels = pedidos.reduce(
     (sum, pedido) => sum + (pedido.itens || []).reduce((itemSum, item) => itemSum + getActiveItemQuantity(pedido, item), 0),
     0
@@ -197,8 +194,6 @@ export default function Dashboard() {
   const deliveryResolvedRate = deliveryResolvedBase > 0
     ? Math.round(((deliveredOrders + notDeliveredOrders) / deliveryResolvedBase) * 100)
     : 0;
-  const photoCoverageRate = totalOrders > 0 ? Math.round((ordersWithPhoto / totalOrders) * 100) : 0;
-
   const availableFlavors = sabores.filter((sabor) => sabor.disponivel).length;
   const lowStockFlavors = sabores
     .filter((sabor) => {
@@ -374,13 +369,6 @@ export default function Dashboard() {
           tone="amber"
         />
         <MetricCard
-          icon={Camera}
-          label={t('dashboard.metrics.photoCoverage')}
-          value={`${photoCoverageRate}%`}
-          hint={t('dashboard.metrics.photoCoverageHint', { count: ordersWithPhoto, total: totalOrders })}
-          tone="slate"
-        />
-        <MetricCard
           icon={UtensilsCrossed}
           label={t('dashboard.metrics.availableFlavors')}
           value={availableFlavors}
@@ -413,14 +401,6 @@ export default function Dashboard() {
                 <span className="text-sm font-black text-primary">{deliveryResolvedRate}%</span>
               </div>
               <Progress value={deliveryResolvedRate} />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-foreground">{t('dashboard.labels.photoCoverage')}</span>
-                <span className="text-sm font-black text-primary">{photoCoverageRate}%</span>
-              </div>
-              <Progress value={photoCoverageRate} />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -594,11 +574,6 @@ export default function Dashboard() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        {pedido.customer_photo_id && (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
-                            {t('dashboard.labels.withPhoto')}
-                          </span>
-                        )}
                         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${badge.className}`}>
                           {badge.label}
                         </span>

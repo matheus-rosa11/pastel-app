@@ -5,7 +5,8 @@ const localUser = {
   role: 'admin',
 };
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+export const API_EVENTS_URL = `${API_BASE_URL}/events`;
 
 async function apiRequest(path, { method = 'GET', body, headers, isFormData = false } = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {

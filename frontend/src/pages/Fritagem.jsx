@@ -5,6 +5,14 @@ import { CheckCircle2, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 
+function truncateCustomerName(name, maxLength = 15) {
+  if (!name) {
+    return '';
+  }
+
+  return name.length > maxLength ? `${name.slice(0, maxLength)}...` : name;
+}
+
 export default function Fritagem() {
   const qc = useQueryClient();
   const { t } = useTranslation();
@@ -106,6 +114,9 @@ export default function Fritagem() {
                     </span>
                     <div className="text-right">
                       <span className="font-black text-primary">{linha.numeroPedido}</span>
+                      <span className="block text-[11px] text-muted-foreground font-semibold sm:hidden">
+                        {truncateCustomerName(linha.nomeCliente)}
+                      </span>
                       <span className="text-xs text-muted-foreground font-semibold ml-1 hidden sm:inline">– {linha.nomeCliente}</span>
                     </div>
                   </motion.div>

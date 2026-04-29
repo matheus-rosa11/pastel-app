@@ -13,9 +13,12 @@ import Fritagem from './pages/Fritagem';
 import EdicaoPedido from './pages/EdicaoPedido';
 import Historico from './pages/Historico';
 import Entregador from './pages/Entregador';
+import { useRealtimeSync } from './hooks/useRealtimeSync';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+
+  useRealtimeSync();
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -37,7 +40,8 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Pedidos />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/sabores" element={<Sabores />} />
         <Route path="/pedidos" element={<Pedidos />} />
         <Route path="/fritagem" element={<Fritagem />} />

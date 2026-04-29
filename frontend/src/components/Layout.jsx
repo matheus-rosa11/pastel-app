@@ -3,7 +3,7 @@ import { LayoutDashboard, UtensilsCrossed, ClipboardList, Flame, FileEdit, Histo
 import { useTranslation } from 'react-i18next';
 
 const navItems = [
-  { path: '/', labelKey: 'layout.nav.dashboard', icon: LayoutDashboard },
+  { path: '/dashboard', labelKey: 'layout.nav.dashboard', icon: LayoutDashboard },
   { path: '/sabores', labelKey: 'layout.nav.flavors', icon: UtensilsCrossed },
   { path: '/pedidos', labelKey: 'layout.nav.orders', icon: ClipboardList },
   { path: '/fritagem', labelKey: 'layout.nav.frying', icon: Flame },

@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+import { API_BASE_URL } from '@/api/pastelAppClient';
 
 export async function saveOrderPhoto(blob) {
   const formData = new FormData();

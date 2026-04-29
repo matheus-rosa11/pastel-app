@@ -1,0 +1,158 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { pastelApp } from '@/api/pastelAppClient';
+import { Button } from '@/components/ui/button';
+import { CheckCircle2, Flame } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
+
+export default function Fritagem() {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+
+  const { data: pedidos = [], isLoading } = useQuery({
+    queryKey: ['pedidos-fritagem'],
+    queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pendente' }, 'created_date', 200),
+    refetchInterval: 10000,
+  });
+
+  const marcarPronto = useMutation({
+    mutationFn: (id) => pastelApp.entities.Pedido.update(id, { status: 'pronto', delivery_status: 'pending_delivery' }),
+    onSuccess: () => {
+      qc.invalidateQueries(['pedidos-fritagem']);
+      qc.invalidateQueries(['pedidos-historico']);
+      qc.invalidateQueries(['pedidos-entregador']);
+    },
+  });
+
+  // Expande todos os itens em linhas individuais, mantendo ordem de criação do pedido
+  // Itens cancelados aparecem taxados, adicionados aparecem com label
+  const linhas = pedidos.flatMap((pedido) =>
+    (pedido.itens || []).flatMap((item) =>
+      Array.from({ length: item.quantidade }, (_, idx) => ({
+        key: `${pedido.id}-${item.sabor_id}-${item.status_item || 'ativo'}-${idx}`,
+        pedidoId: pedido.id,
+        numeroPedido: String(pedido.numero_pedido).padStart(3, '0'),
+        nomeCliente: pedido.nome_cliente,
+        saborNome: item.sabor_nome,
+        statusItem: item.status_item || 'ativo',
+      }))
+    )
+  );
+
+  // Conta apenas os ativos/adicionados para o badge de total
+  const totalAtivos = linhas.filter((l) => l.statusItem !== 'cancelado').length;
+
+  const pedidosOrdenados = [...pedidos].sort(
+    (a, b) => new Date(a.created_date) - new Date(b.created_date)
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Flame className="text-accent" size={28} />
+        <h1 className="text-2xl font-black text-foreground">{t('frying.pageTitle')}</h1>
+        {totalAtivos > 0 && (
+          <span className="ml-auto bg-primary text-primary-foreground text-sm font-black px-3 py-1 rounded-full">
+            {t('common.pastelCount', { count: totalAtivos })}
+          </span>
+        )}
+      </div>
+
+      {linhas.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="text-5xl mb-3">✅</div>
+          <p className="text-xl font-black text-muted-foreground">{t('frying.emptyTitle')}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('frying.emptyDescription')}</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Tabela de pastéis */}
+          <div className="bg-card rounded-xl shadow-md border border-border overflow-hidden">
+            <div className="bg-primary/10 grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr] px-4 py-2 border-b border-border">
+              <span className="font-black text-xs uppercase tracking-widest text-primary">{t('common.flavor')}</span>
+              <span className="font-black text-xs uppercase tracking-widest text-primary text-right">{t('common.order')}</span>
+            </div>
+            <AnimatePresence>
+              {linhas.map((linha, index) => {
+                const cancelado = linha.statusItem === 'cancelado';
+                const adicionado = linha.statusItem === 'adicionado';
+                const proximaLinha = linhas[index + 1];
+                const encerraPedido = !proximaLinha || proximaLinha.pedidoId !== linha.pedidoId;
+                return (
+                  <motion.div
+                    key={linha.key}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    transition={{ delay: index * 0.02 }}
+                    className={`grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr] px-4 py-3 border-b ${
+                      encerraPedido ? 'border-b-2 border-orange-400/90' : 'border-border'
+                    } last:border-0 ${
+                      index % 2 === 0 ? 'bg-card' : 'bg-muted/40'
+                    } ${cancelado ? 'opacity-50' : ''}`}
+                  >
+                    <span className={`font-semibold text-sm ${cancelado ? 'line-through text-muted-foreground' : ''}`}>
+                      {linha.saborNome}
+                      {cancelado && <span className="ml-1 text-xs font-bold text-red-500 no-underline" style={{textDecoration:'none'}}>({t('common.cancelled').toLowerCase()})</span>}
+                      {adicionado && <span className="ml-1 text-xs font-bold text-primary">({t('common.added').toLowerCase()})</span>}
+                    </span>
+                    <div className="text-right">
+                      <span className="font-black text-primary">{linha.numeroPedido}</span>
+                      <span className="text-xs text-muted-foreground font-semibold ml-1 hidden sm:inline">– {linha.nomeCliente}</span>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          {/* Botões de conclusão por pedido */}
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3">{t('frying.markReady')}</h2>
+            <div className="flex flex-col gap-2">
+              <AnimatePresence>
+                {pedidosOrdenados.map((pedido) => {
+                  const totalItens = (pedido.itens || [])
+                    .filter((i) => i.status_item !== 'cancelado')
+                    .reduce((s, i) => s + i.quantidade, 0);
+                  return (
+                    <motion.div
+                      key={pedido.id}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, x: 50 }}
+                      className="flex items-center justify-between bg-card rounded-xl border border-border px-4 py-3 shadow-sm"
+                    >
+                      <div>
+                        <span className="font-black text-primary text-lg">{String(pedido.numero_pedido).padStart(3, '0')}</span>
+                        <span className="font-bold text-foreground ml-2">{pedido.nome_cliente}</span>
+                        <span className="ml-2 text-xs text-muted-foreground font-semibold">{t('common.pastelCount', { count: totalItens })}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-green-500 hover:bg-green-600 text-white font-bold gap-1"
+                        onClick={() => marcarPronto.mutate(pedido.id)}
+                        disabled={marcarPronto.isPending}
+                      >
+                        <CheckCircle2 size={15} /> {t('common.ready')}
+                      </Button>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

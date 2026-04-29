@@ -1,0 +1,64 @@
+{
+  "name": "Pedido",
+  "type": "object",
+  "properties": {
+    "numero_pedido": {
+      "type": "integer",
+      "description": "N\u00famero sequencial do pedido (3 d\u00edgitos)"
+    },
+    "nome_cliente": {
+      "type": "string",
+      "description": "Nome do cliente"
+    },
+    "customer_photo_id": {
+      "type": "string",
+      "description": "Identificador da foto do cliente armazenada localmente"
+    },
+    "delivery_status": {
+      "type": "string",
+      "enum": [
+        "pending_delivery",
+        "delivered",
+        "not_delivered"
+      ],
+      "description": "Status da entrega apos o pedido ficar pronto"
+    },
+    "itens": {
+      "type": "array",
+      "description": "Lista de itens do pedido",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sabor_id": {
+            "type": "string"
+          },
+          "sabor_nome": {
+            "type": "string"
+          },
+          "quantidade": {
+            "type": "integer"
+          },
+          "status_item": {
+            "type": "string",
+            "description": "ativo | adicionado | cancelado",
+            "default": "ativo"
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pendente",
+        "pronto",
+        "cancelado"
+      ],
+      "default": "pendente",
+      "description": "Status do pedido"
+    }
+  },
+  "required": [
+    "nome_cliente",
+    "itens"
+  ]
+}

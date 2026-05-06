@@ -1,22 +1,28 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   Bike,
   ClipboardList,
+  Clock3,
   Flame,
   LayoutDashboard,
   Package,
   TrendingUp,
   UtensilsCrossed,
 } from 'lucide-react';
+import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { pastelApp } from '@/api/pastelAppClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getDeliveryStatus } from '@/lib/deliveryStatus';
 
 const LOW_STOCK_THRESHOLD = 5;
+const PREPARATION_WINDOW_OPTIONS = ['5', '10', '20', '50', 'all'];
 
 function isToday(dateValue) {
   if (!dateValue) {
@@ -51,6 +57,34 @@ function getCancelledItemQuantity(pedido, item) {
 
 function formatOrderNumber(numeroPedido) {
   return String(numeroPedido || 0).padStart(3, '0');
+}
+
+function formatMinutes(value) {
+  if (value == null || Number.isNaN(Number(value))) {
+    return '--';
+  }
+
+  return `${Number(value).toFixed(1)} min`;
+}
+
+function getPreparationLogEntry(t, pedido) {
+  if (pedido.preparation_minutes == null) {
+    return null;
+  }
+
+  const base = t('dashboard.preparation.logEntry', {
+    order: formatOrderNumber(pedido.numero_pedido),
+    minutes: pedido.preparation_minutes,
+  });
+
+  if (
+    pedido.considered_preparation_minutes != null
+    && pedido.considered_preparation_minutes > pedido.preparation_minutes
+  ) {
+    return `${base} ${t('dashboard.preparation.logAdjusted', { minutes: pedido.considered_preparation_minutes })}`;
+  }
+
+  return base;
 }
 
 function getOrderBadge(t, pedido) {
@@ -151,6 +185,7 @@ function RankedList({ items, emptyLabel, renderMeta }) {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const [preparationWindow, setPreparationWindow] = useState('10');
 
   const { data: pedidos = [], isLoading: isLoadingPedidos } = useQuery({
     queryKey: ['pedidos-dashboard'],
@@ -269,6 +304,53 @@ export default function Dashboard() {
   const recentOrders = [...pedidos]
     .sort((left, right) => new Date(right.updated_date || right.created_date) - new Date(left.updated_date || left.created_date))
     .slice(0, 6);
+  const completedPreparationOrders = [...pedidos]
+    .filter((pedido) => pedido.preparation_minutes != null)
+    .sort((left, right) => new Date(right.pronto_at || right.updated_date || right.created_date) - new Date(left.pronto_at || left.updated_date || left.created_date))
+  const preparationLogs = completedPreparationOrders
+    .slice(0, 8);
+  const preparationWindowSize = preparationWindow === 'all' ? completedPreparationOrders.length : Number(preparationWindow);
+  const preparationSeries = [...completedPreparationOrders]
+    .slice(0, preparationWindowSize)
+    .reverse()
+    .map((pedido) => {
+      const activeItemCount = (pedido.itens || []).reduce((sum, item) => sum + getActiveItemQuantity(pedido, item), 0);
+      const actualPerPastel = activeItemCount > 0 ? pedido.preparation_minutes / activeItemCount : 0;
+
+      return {
+        order: formatOrderNumber(pedido.numero_pedido),
+        actual: pedido.preparation_minutes,
+        perPastel: Number(actualPerPastel.toFixed(2)),
+      };
+    });
+  const avgPreparationMinutes = completedPreparationOrders.length > 0
+    ? completedPreparationOrders.reduce((sum, pedido) => sum + pedido.preparation_minutes, 0) / completedPreparationOrders.length
+    : 0;
+  const avgPreparationPerPastel = completedPreparationOrders.length > 0
+    ? completedPreparationOrders.reduce((sum, pedido) => {
+      const activeItemCount = (pedido.itens || []).reduce((itemSum, item) => itemSum + getActiveItemQuantity(pedido, item), 0);
+      if (!activeItemCount) {
+        return sum;
+      }
+
+      return sum + (pedido.preparation_minutes / activeItemCount);
+    }, 0) / completedPreparationOrders.filter((pedido) => {
+      const activeItemCount = (pedido.itens || []).reduce((itemSum, item) => itemSum + getActiveItemQuantity(pedido, item), 0);
+      return activeItemCount > 0;
+    }).length || 0
+    : 0;
+  const minPreparationMinutes = completedPreparationOrders.length > 0
+    ? Math.min(...completedPreparationOrders.map((pedido) => pedido.preparation_minutes))
+    : 0;
+  const maxPreparationMinutes = completedPreparationOrders.length > 0
+    ? Math.max(...completedPreparationOrders.map((pedido) => pedido.preparation_minutes))
+    : 0;
+  const preparationChartConfig = {
+    actual: {
+      label: t('dashboard.preparation.chartActual'),
+      color: 'hsl(24 95% 53%)',
+    },
+  };
 
   const attentionItems = [
     {
@@ -383,40 +465,89 @@ export default function Dashboard() {
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle>{t('dashboard.sections.operationsTitle')}</CardTitle>
-            <CardDescription>{t('dashboard.sections.operationsDescription')}</CardDescription>
+            <CardTitle>{t('dashboard.sections.preparationInsightsTitle')}</CardTitle>
+            <CardDescription>{t('dashboard.sections.preparationInsightsDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-foreground">{t('dashboard.labels.kitchenResolved')}</span>
-                <span className="text-sm font-black text-primary">{kitchenResolvedRate}%</span>
-              </div>
-              <Progress value={kitchenResolvedRate} />
-            </div>
+            {completedPreparationOrders.length === 0 ? (
+              <p className="text-sm font-semibold text-muted-foreground">{t('dashboard.empty.preparationLogs')}</p>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl bg-muted/50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.preparation.avgPerOrder')}</p>
+                    <p className="mt-2 text-2xl font-black text-foreground">{formatMinutes(avgPreparationMinutes)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-muted/50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.preparation.avgPerPastel')}</p>
+                    <p className="mt-2 text-2xl font-black text-foreground">{formatMinutes(avgPreparationPerPastel)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-muted/50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.preparation.fastestPrep')}</p>
+                    <p className="mt-2 text-2xl font-black text-foreground">{`${Math.round(minPreparationMinutes)} min`}</p>
+                  </div>
+                  <div className="rounded-2xl bg-muted/50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.preparation.slowestPrep')}</p>
+                    <p className="mt-2 text-2xl font-black text-foreground">{`${Math.round(maxPreparationMinutes)} min`}</p>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-foreground">{t('dashboard.labels.deliveryResolved')}</span>
-                <span className="text-sm font-black text-primary">{deliveryResolvedRate}%</span>
-              </div>
-              <Progress value={deliveryResolvedRate} />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl bg-muted/50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.delivered')}</p>
-                <p className="mt-2 text-2xl font-black text-foreground">{deliveredOrders}</p>
-              </div>
-              <div className="rounded-2xl bg-muted/50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.notDelivered')}</p>
-                <p className="mt-2 text-2xl font-black text-foreground">{notDeliveredOrders}</p>
-              </div>
-              <div className="rounded-2xl bg-muted/50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.cancelledOrders')}</p>
-                <p className="mt-2 text-2xl font-black text-foreground">{cancelledOrders}</p>
-              </div>
-            </div>
+                <div className="rounded-2xl border border-border bg-background p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-black text-foreground">{t('dashboard.preparation.chartTitle')}</p>
+                      <p className="text-xs font-semibold text-muted-foreground">{t('dashboard.preparation.chartDescription', { count: preparationSeries.length })}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-muted-foreground">{t('dashboard.preparation.windowLabel')}</span>
+                      <Select value={preparationWindow} onValueChange={setPreparationWindow}>
+                        <SelectTrigger className="h-9 w-[140px] bg-background">
+                          <SelectValue placeholder={t('dashboard.preparation.windowLabel')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PREPARATION_WINDOW_OPTIONS.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option === 'all'
+                                ? t('dashboard.preparation.windowAll')
+                                : t('dashboard.preparation.windowLast', { count: Number(option) })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <ChartContainer config={preparationChartConfig} className="h-72 w-full">
+                    <LineChart data={preparationSeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="order" tickLine={false} axisLine={false} />
+                      <YAxis tickLine={false} axisLine={false} width={36} />
+                      <ReferenceLine y={avgPreparationMinutes} stroke="hsl(24 95% 53%)" strokeDasharray="4 4" ifOverflow="extendDomain" />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) => (
+                              <div className="flex w-full items-center justify-between gap-4">
+                                <span className="text-muted-foreground">{t('dashboard.preparation.chartActual')}</span>
+                                <span className="font-mono font-bold text-foreground">{`${value} min`}</span>
+                              </div>
+                            )}
+                            labelFormatter={(label) => `${t('common.order')} ${label}`}
+                          />
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="actual"
+                        stroke="var(--color-actual)"
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: 'var(--color-actual)' }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ChartContainer>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -581,6 +712,67 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>{t('dashboard.sections.operationsTitle')}</CardTitle>
+            <CardDescription>{t('dashboard.sections.operationsDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-foreground">{t('dashboard.labels.kitchenResolved')}</span>
+                <span className="text-sm font-black text-primary">{kitchenResolvedRate}%</span>
+              </div>
+              <Progress value={kitchenResolvedRate} />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-foreground">{t('dashboard.labels.deliveryResolved')}</span>
+                <span className="text-sm font-black text-primary">{deliveryResolvedRate}%</span>
+              </div>
+              <Progress value={deliveryResolvedRate} />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.delivered')}</p>
+                <p className="mt-2 text-2xl font-black text-foreground">{deliveredOrders}</p>
+              </div>
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.notDelivered')}</p>
+                <p className="mt-2 text-2xl font-black text-foreground">{notDeliveredOrders}</p>
+              </div>
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{t('dashboard.labels.cancelledOrders')}</p>
+                <p className="mt-2 text-2xl font-black text-foreground">{cancelledOrders}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>{t('dashboard.sections.preparationLogsTitle')}</CardTitle>
+            <CardDescription>{t('dashboard.sections.preparationLogsDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {preparationLogs.length === 0 ? (
+              <p className="text-sm font-semibold text-muted-foreground">{t('dashboard.empty.preparationLogs')}</p>
+            ) : (
+              <div className="space-y-2">
+                {preparationLogs.map((pedido) => (
+                  <div key={pedido.id} className="rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground">
+                    {getPreparationLogEntry(t, pedido)}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

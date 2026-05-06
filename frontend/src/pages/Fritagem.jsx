@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pastelApp } from '@/api/pastelAppClient';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Flame } from 'lucide-react';
+import { CheckCircle2, Clock3, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 
@@ -13,9 +14,35 @@ function truncateCustomerName(name, maxLength = 15) {
   return name.length > maxLength ? `${name.slice(0, maxLength)}...` : name;
 }
 
+function formatQueueTimer(queuedAt, nowMs) {
+  const queuedAtMs = new Date(queuedAt).getTime();
+
+  if (!Number.isFinite(queuedAtMs)) {
+    return '00:00:00';
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - queuedAtMs) / 1000));
+  const hours = Math.floor(elapsedSeconds / 3600);
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+  const seconds = elapsedSeconds % 60;
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 export default function Fritagem() {
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const { data: pedidos = [], isLoading } = useQuery({
     queryKey: ['pedidos-fritagem'],
@@ -134,6 +161,7 @@ export default function Fritagem() {
                   const totalItens = (pedido.itens || [])
                     .filter((i) => i.status_item !== 'cancelado')
                     .reduce((s, i) => s + i.quantidade, 0);
+                  const queueTimer = formatQueueTimer(pedido.queued_at || pedido.created_date, nowMs);
                   return (
                     <motion.div
                       key={pedido.id}
@@ -144,9 +172,15 @@ export default function Fritagem() {
                       className="flex items-center justify-between bg-card rounded-xl border border-border px-4 py-3 shadow-sm"
                     >
                       <div>
-                        <span className="font-black text-primary text-lg">{String(pedido.numero_pedido).padStart(3, '0')}</span>
-                        <span className="font-bold text-foreground ml-2">{pedido.nome_cliente}</span>
-                        <span className="ml-2 text-xs text-muted-foreground font-semibold">{t('common.pastelCount', { count: totalItens })}</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-black text-primary text-lg">{String(pedido.numero_pedido).padStart(3, '0')}</span>
+                          <span className="font-bold text-foreground">{pedido.nome_cliente}</span>
+                          <span className="text-xs text-muted-foreground font-semibold">{t('common.pastelCount', { count: totalItens })}</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-700">
+                            <Clock3 size={12} />
+                            <span>{queueTimer}</span>
+                          </span>
+                        </div>
                       </div>
                       <Button
                         size="sm"

@@ -4,6 +4,10 @@ import { seedFlavors } from './seedFlavors.js';
 
 const { Pool } = pg;
 
+const PREPARATION_HISTORY_SAMPLE_SIZE = 5;
+const MINIMUM_PREPARATION_MINUTES = 10;
+const FIXED_ESTIMATE_BUFFER_MINUTES = 5;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -28,6 +32,12 @@ function serializeOrder(orderRow, items = []) {
   return {
     ...orderRow,
     created_date: nowIso(orderRow.created_date),
+    queued_at: nowIso(orderRow.queued_at),
+    preparation_minutes: orderRow.preparation_minutes == null ? null : Number(orderRow.preparation_minutes),
+    considered_preparation_minutes: orderRow.considered_preparation_minutes == null
+      ? null
+      : Number(orderRow.considered_preparation_minutes),
+    pronto_at: nowIso(orderRow.pronto_at),
     updated_date: nowIso(orderRow.updated_date),
     itens: items.map((item) => ({
       sabor_id: item.sabor_id,
@@ -58,6 +68,90 @@ function effectiveItemTotals(status, items = []) {
   }
 
   return totals;
+}
+
+function countActiveItems(status, items = []) {
+  let total = 0;
+
+  if (status === 'cancelado') {
+    return total;
+  }
+
+  for (const item of items) {
+    if (normalizeItemStatus(item.status_item) === 'cancelado') {
+      continue;
+    }
+
+    total += Number(item.quantidade || 0);
+  }
+
+  return total;
+}
+
+function calculatePreparationMetrics(queuedAt, prontoAt) {
+  const queuedAtMs = new Date(queuedAt).getTime();
+  const prontoAtMs = new Date(prontoAt).getTime();
+
+  if (!Number.isFinite(queuedAtMs) || !Number.isFinite(prontoAtMs) || prontoAtMs < queuedAtMs) {
+    return {
+      preparationMinutes: null,
+      consideredPreparationMinutes: null,
+    };
+  }
+
+  const preparationMinutes = Math.max(0, Math.ceil((prontoAtMs - queuedAtMs) / 60000));
+
+  return {
+    preparationMinutes,
+    consideredPreparationMinutes: Math.max(MINIMUM_PREPARATION_MINUTES, preparationMinutes),
+  };
+}
+
+async function estimateOrderTotalMinutes(client, items = []) {
+  const activeItemCount = countActiveItems('pendente', items);
+
+  if (activeItemCount <= 0) {
+    return MINIMUM_PREPARATION_MINUTES + FIXED_ESTIMATE_BUFFER_MINUTES;
+  }
+
+  const { rows } = await client.query(
+    `
+      WITH recent_ready_orders AS (
+        SELECT id, considered_preparation_minutes
+        FROM orders
+        WHERE considered_preparation_minutes IS NOT NULL
+          AND status <> 'cancelado'
+        ORDER BY pronto_at DESC NULLS LAST
+        LIMIT $1
+      ),
+      recent_order_item_counts AS (
+        SELECT
+          order_id,
+          SUM(CASE WHEN status_item = 'cancelado' THEN 0 ELSE quantidade END)::int AS active_item_count
+        FROM order_items
+        WHERE order_id IN (SELECT id FROM recent_ready_orders)
+        GROUP BY order_id
+      ),
+      recent_order_totals AS (
+        SELECT
+          SUM(recent_ready_orders.considered_preparation_minutes)::numeric AS total_minutes,
+          SUM(recent_order_item_counts.active_item_count)::numeric AS total_items
+        FROM recent_ready_orders
+        INNER JOIN recent_order_item_counts
+          ON recent_order_item_counts.order_id = recent_ready_orders.id
+        WHERE recent_order_item_counts.active_item_count > 0
+      )
+      SELECT total_minutes / NULLIF(total_items, 0) AS average_minutes_per_item
+      FROM recent_order_totals
+    `,
+    [PREPARATION_HISTORY_SAMPLE_SIZE],
+  );
+
+  const averageMinutesPerItem = Number(rows[0]?.average_minutes_per_item || 0);
+  const estimatedPreparationMinutes = averageMinutesPerItem > 0 ? averageMinutesPerItem * activeItemCount : 0;
+  const boundedPreparationMinutes = Math.max(MINIMUM_PREPARATION_MINUTES, estimatedPreparationMinutes);
+
+  return Math.ceil(boundedPreparationMinutes + FIXED_ESTIMATE_BUFFER_MINUTES);
 }
 
 async function adjustFlavorStocks(client, previousStatus, previousItems, nextStatus, nextItems) {
@@ -206,6 +300,10 @@ export async function initializeDatabase() {
       customer_photo_id TEXT REFERENCES order_photos(id) ON DELETE SET NULL,
       delivery_status TEXT,
       status TEXT NOT NULL DEFAULT 'pendente',
+      queued_at TIMESTAMPTZ,
+      preparation_minutes INTEGER,
+      considered_preparation_minutes INTEGER,
+      pronto_at TIMESTAMPTZ,
       created_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -226,6 +324,26 @@ export async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_orders_updated_date ON orders (updated_date);
     CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items (order_id);
   `);
+
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_minutes INTEGER');
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS considered_preparation_minutes INTEGER');
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS pronto_at TIMESTAMPTZ');
+  await pool.query('UPDATE orders SET queued_at = created_date WHERE queued_at IS NULL');
+  await pool.query(`
+    UPDATE orders
+    SET
+      preparation_minutes = GREATEST(0, CEIL(EXTRACT(EPOCH FROM (pronto_at - queued_at)) / 60.0)::int),
+      considered_preparation_minutes = GREATEST(
+        $1,
+        GREATEST(0, CEIL(EXTRACT(EPOCH FROM (pronto_at - queued_at)) / 60.0)::int)
+      )
+    WHERE queued_at IS NOT NULL
+      AND pronto_at IS NOT NULL
+      AND (preparation_minutes IS NULL OR considered_preparation_minutes IS NULL)
+  `, [MINIMUM_PREPARATION_MINUTES]);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_orders_queued_at ON orders (queued_at)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_orders_pronto_at ON orders (pronto_at)');
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS total FROM flavors');
   if (rows[0].total > 0) {
@@ -350,6 +468,7 @@ export async function createOrder(payload) {
     const orderId = randomUUID();
     const nextStatus = payload.status ?? 'pendente';
     const items = payload.itens ?? [];
+    const queuedAt = nextStatus === 'pendente' ? new Date() : null;
 
     await adjustFlavorStocks(client, 'pendente', [], nextStatus, items);
 
@@ -361,9 +480,10 @@ export async function createOrder(payload) {
           nome_cliente,
           customer_photo_id,
           delivery_status,
-          status
+          status,
+          queued_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `,
       [
@@ -373,13 +493,19 @@ export async function createOrder(payload) {
         payload.customer_photo_id ?? null,
         payload.delivery_status ?? null,
         nextStatus,
+        queuedAt,
       ],
     );
 
     await replaceOrderItems(client, orderId, items);
 
+    const estimated_total_minutes = await estimateOrderTotalMinutes(client, items);
+
     await client.query('COMMIT');
-    return serializeOrder(rows[0], items);
+    return {
+      ...serializeOrder(rows[0], items),
+      estimated_total_minutes,
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -409,6 +535,10 @@ export async function updateOrder(id, updates) {
       ...currentOrder,
       ...updates,
       status: updates.status ?? currentOrder.status,
+      queued_at: currentOrder.queued_at,
+      preparation_minutes: currentOrder.preparation_minutes,
+      considered_preparation_minutes: currentOrder.considered_preparation_minutes,
+      pronto_at: currentOrder.pronto_at,
       delivery_status: Object.prototype.hasOwnProperty.call(updates, 'delivery_status')
         ? updates.delivery_status
         : currentOrder.delivery_status,
@@ -416,6 +546,28 @@ export async function updateOrder(id, updates) {
         ? updates.customer_photo_id
         : currentOrder.customer_photo_id,
     };
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'status')) {
+      if (updates.status === 'pendente') {
+        nextOrder.queued_at = currentOrder.status === 'pendente' && currentOrder.queued_at
+          ? currentOrder.queued_at
+          : new Date();
+        nextOrder.preparation_minutes = null;
+        nextOrder.considered_preparation_minutes = null;
+      }
+
+      if (updates.status === 'pronto') {
+        nextOrder.pronto_at = currentOrder.status === 'pronto' && currentOrder.pronto_at
+          ? currentOrder.pronto_at
+          : new Date();
+
+        const preparationMetrics = calculatePreparationMetrics(nextOrder.queued_at, nextOrder.pronto_at);
+        nextOrder.preparation_minutes = preparationMetrics.preparationMinutes;
+        nextOrder.considered_preparation_minutes = preparationMetrics.consideredPreparationMinutes;
+      } else {
+        nextOrder.pronto_at = null;
+      }
+    }
 
     const nextItems = updates.itens ?? currentItems;
 
@@ -443,6 +595,14 @@ export async function updateOrder(id, updates) {
     if (Object.prototype.hasOwnProperty.call(updates, 'status')) {
       values.push(updates.status);
       fields.push(`status = $${values.length}`);
+      values.push(nextOrder.queued_at);
+      fields.push(`queued_at = $${values.length}`);
+      values.push(nextOrder.preparation_minutes);
+      fields.push(`preparation_minutes = $${values.length}`);
+      values.push(nextOrder.considered_preparation_minutes);
+      fields.push(`considered_preparation_minutes = $${values.length}`);
+      values.push(nextOrder.pronto_at);
+      fields.push(`pronto_at = $${values.length}`);
     }
 
     let updatedOrderRow = currentOrder;

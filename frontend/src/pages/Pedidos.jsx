@@ -73,6 +73,16 @@ function ConfirmacaoPedido({ pedido, onClose }) {
           <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">{t('orders.confirmation.yourNumber')}</p>
           <p className="text-5xl font-black text-primary">{String(pedido.numero_pedido).padStart(3, '0')}</p>
           <p className="text-lg font-bold text-foreground mt-1">{pedido.nome_cliente}</p>
+          {pedido.estimated_total_minutes != null && (
+            <div className="mt-3 rounded-lg bg-background/70 px-3 py-2">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                {t('orders.confirmation.estimatedTimeLabel')}
+              </p>
+              <p className="mt-1 text-base font-black text-foreground">
+                {t('orders.confirmation.estimatedTimeValue', { count: pedido.estimated_total_minutes })}
+              </p>
+            </div>
+          )}
         </div>
         <Button onClick={onClose} className="w-full bg-primary hover:bg-primary/90 font-bold text-lg py-6">
           {t('common.close')}

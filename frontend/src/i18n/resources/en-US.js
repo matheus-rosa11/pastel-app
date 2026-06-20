@@ -233,6 +233,15 @@ const enUS = {
       attention: 'Everything is under control for now. No open operational alerts.',
       preparationLogs: 'Preparation logs will appear here as orders are completed in frying.',
     },
+    maintenance: {
+      resetTitle: 'Complete database reset',
+      resetDescription: 'Use only at operation start. This removes orders, reservations, photos, and recreates the default flavors.',
+      resetPlaceholder: 'Select an action',
+      keepOption: 'Keep current database',
+      confirmOption: 'I confirm full database reset',
+      resetAction: 'Reset database now',
+      resetHint: 'The action is immediate and affects all connected users.',
+    },
   },
   history: {
     pageTitle: 'History',
@@ -266,6 +275,9 @@ const enUS = {
     fryingLabel: 'In frying',
     finishedLabel: 'Finalized without delivery',
     fryAction: 'Fry',
+    editAction: 'Edit',
+    adjustFlavors: 'Adjust reservation flavors',
+    cancelEditing: 'Cancel editing',
     orderLabel: 'Reservation {{number}}',
   },
   auth: {

@@ -233,6 +233,15 @@ const ptBR = {
       attention: 'Tudo sob controle por agora. Nenhum alerta operacional aberto.',
       preparationLogs: 'Os logs de preparo vão aparecer aqui conforme pedidos forem concluídos na fritagem.',
     },
+    maintenance: {
+      resetTitle: 'Limpeza completa da base',
+      resetDescription: 'Use apenas no início da operação. Isso remove pedidos, reservas, fotos e recria os sabores padrão.',
+      resetPlaceholder: 'Selecione uma ação',
+      keepOption: 'Manter base atual',
+      confirmOption: 'Confirmo limpar a base completa',
+      resetAction: 'Limpar base agora',
+      resetHint: 'A ação é imediata e impacta todos os usuários conectados.',
+    },
   },
   history: {
     pageTitle: 'Histórico',
@@ -266,6 +275,9 @@ const ptBR = {
     fryingLabel: 'Em fritagem',
     finishedLabel: 'Finalizado sem entrega',
     fryAction: 'Fritar',
+    editAction: 'Editar',
+    adjustFlavors: 'Ajuste os sabores da reserva',
+    cancelEditing: 'Cancelar edição',
     orderLabel: 'Reserva {{number}}',
   },
   auth: {

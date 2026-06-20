@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { pastelApp } from '@/api/pastelAppClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { BookmarkCheck, Flame, Minus, Plus, Ticket, XCircle } from 'lucide-react';
+import { BookmarkCheck, Check, Flame, Minus, Pencil, Plus, Ticket, X, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 function formatOrderNumber(orderNumber) {
@@ -15,6 +15,8 @@ export default function Reservas() {
   const { t } = useTranslation();
   const [reservedBy, setReservedBy] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
+  const [editingReservationId, setEditingReservationId] = useState(null);
+  const [editingQuantities, setEditingQuantities] = useState({});
 
   const { data: flavors = [] } = useQuery({
     queryKey: ['sabores'],
@@ -61,6 +63,19 @@ export default function Reservas() {
       qc.invalidateQueries(['pedidos-reservas']);
       qc.invalidateQueries(['pedidos-fritagem']);
       qc.invalidateQueries(['pedidos-historico']);
+    },
+  });
+
+  const updateReservationItems = useMutation({
+    mutationFn: ({ orderId, itens }) => pastelApp.entities.Pedido.update(orderId, { itens }),
+    onSuccess: () => {
+      qc.invalidateQueries(['pedidos-reservas']);
+      qc.invalidateQueries(['sabores']);
+      qc.invalidateQueries(['pedidos-dashboard']);
+      qc.invalidateQueries(['pedidos-fritagem']);
+      qc.invalidateQueries(['pedidos-historico']);
+      setEditingReservationId(null);
+      setEditingQuantities({});
     },
   });
 
@@ -123,6 +138,102 @@ export default function Reservas() {
   };
 
   const totalPastels = selectedItems.reduce((sum, item) => sum + item.quantidade, 0);
+
+  const startEditReservation = (reservation) => {
+    const nextQuantities = {};
+    for (const item of reservation.itens || []) {
+      if ((item.status_item || 'ativo') !== 'cancelado') {
+        nextQuantities[item.sabor_id] = (nextQuantities[item.sabor_id] || 0) + (item.quantidade || 0);
+      }
+    }
+
+    setEditingReservationId(reservation.id);
+    setEditingQuantities(nextQuantities);
+  };
+
+  const changeEditQuantity = (reservation, flavor, delta) => {
+    setEditingQuantities((previous) => {
+      const current = previous[flavor.id] || 0;
+      const currentInReservation = (reservation.itens || [])
+        .filter((item) => item.sabor_id === flavor.id && (item.status_item || 'ativo') !== 'cancelado')
+        .reduce((sum, item) => sum + (item.quantidade || 0), 0);
+      const maxAllowed = (flavor.quantidade_disponivel ?? 0) + currentInReservation;
+      const next = current + delta;
+
+      if (next < 0) {
+        return previous;
+      }
+      if (delta > 0 && next > maxAllowed) {
+        return previous;
+      }
+
+      if (next === 0) {
+        const cleaned = { ...previous };
+        delete cleaned[flavor.id];
+        return cleaned;
+      }
+
+      return {
+        ...previous,
+        [flavor.id]: next,
+      };
+    });
+  };
+
+  const saveReservationEdit = (reservation) => {
+    const originalItems = reservation.itens || [];
+    const nextItems = [];
+    const originalFlavorIds = new Set();
+
+    for (const item of originalItems) {
+      if ((item.status_item || 'ativo') === 'cancelado') {
+        nextItems.push({ ...item, status_item: 'cancelado' });
+        continue;
+      }
+
+      originalFlavorIds.add(item.sabor_id);
+      const desiredQty = editingQuantities[item.sabor_id] || 0;
+      const originalQty = item.quantidade || 0;
+
+      if (desiredQty === 0) {
+        nextItems.push({ ...item, status_item: 'cancelado' });
+        continue;
+      }
+
+      if (desiredQty < originalQty) {
+        const diff = originalQty - desiredQty;
+        nextItems.push({ ...item, quantidade: desiredQty, status_item: item.status_item || 'ativo' });
+        nextItems.push({ ...item, quantidade: diff, status_item: 'cancelado' });
+        continue;
+      }
+
+      if (desiredQty > originalQty) {
+        const diff = desiredQty - originalQty;
+        nextItems.push({ ...item, quantidade: originalQty, status_item: item.status_item || 'ativo' });
+        nextItems.push({ ...item, quantidade: diff, status_item: 'adicionado' });
+        continue;
+      }
+
+      nextItems.push({ ...item, status_item: item.status_item || 'ativo' });
+    }
+
+    for (const [flavorId, quantity] of Object.entries(editingQuantities)) {
+      if (!originalFlavorIds.has(flavorId) && quantity > 0) {
+        const flavor = availableFlavors.find((item) => item.id === flavorId);
+        nextItems.push({
+          sabor_id: flavorId,
+          sabor_nome: flavor?.nome || flavorId,
+          quantidade: quantity,
+          status_item: 'adicionado',
+        });
+      }
+    }
+
+    updateReservationItems.mutate({
+      orderId: reservation.id,
+      itens: nextItems,
+    });
+  };
 
   const submitReservation = (event) => {
     event.preventDefault();
@@ -264,6 +375,7 @@ export default function Reservas() {
             const isReserved = reservation.status === 'reservado';
             const isFrying = reservation.status === 'pendente';
             const isFinished = reservation.status === 'pronto';
+            const isEditing = editingReservationId === reservation.id;
             const activeItems = (reservation.itens || []).filter((item) => item.status_item !== 'cancelado');
             const totalItems = activeItems.reduce((sum, item) => sum + (item.quantidade || 0), 0);
 
@@ -308,9 +420,29 @@ export default function Reservas() {
                       <Button
                         type="button"
                         size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => startEditReservation(reservation)}
+                        disabled={
+                          fryReservation.isPending
+                          || cancelReservation.isPending
+                          || updateReservationItems.isPending
+                        }
+                      >
+                        <Pencil size={14} /> {t('reservations.editAction')}
+                      </Button>
+                    )}
+                    {isReserved && (
+                      <Button
+                        type="button"
+                        size="sm"
                         className="gap-1 bg-amber-500 font-bold text-white hover:bg-amber-600"
                         onClick={() => fryReservation.mutate(reservation.id)}
-                        disabled={fryReservation.isPending}
+                        disabled={
+                          fryReservation.isPending
+                          || cancelReservation.isPending
+                          || updateReservationItems.isPending
+                        }
                       >
                         <Flame size={14} /> {t('reservations.fryAction')}
                       </Button>
@@ -322,7 +454,11 @@ export default function Reservas() {
                         variant="outline"
                         className="gap-1 text-destructive hover:text-destructive"
                         onClick={() => cancelReservation.mutate(reservation.id)}
-                        disabled={cancelReservation.isPending || fryReservation.isPending}
+                        disabled={
+                          cancelReservation.isPending
+                          || fryReservation.isPending
+                          || updateReservationItems.isPending
+                        }
                       >
                         <XCircle size={14} /> {t('reservations.cancelAction')}
                       </Button>
@@ -330,7 +466,91 @@ export default function Reservas() {
                   </div>
                 </div>
 
-                {activeItems.length > 0 && (
+                {isReserved && isEditing && (
+                  <div className="mt-3 space-y-4 border-t border-border/70 pt-3">
+                    <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                      {t('reservations.adjustFlavors')}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {availableFlavors.map((flavor) => {
+                        const currentQty = editingQuantities[flavor.id] || 0;
+                        const currentInReservation = (reservation.itens || [])
+                          .filter((item) => item.sabor_id === flavor.id && (item.status_item || 'ativo') !== 'cancelado')
+                          .reduce((sum, item) => sum + (item.quantidade || 0), 0);
+                        const availableQuantity = flavor.quantidade_disponivel ?? 0;
+                        const maxAllowed = availableQuantity + currentInReservation;
+                        const canIncrease = currentQty < maxAllowed;
+
+                        return (
+                          <div
+                            key={`${reservation.id}-${flavor.id}`}
+                            className={`flex flex-col rounded-lg border-2 p-2.5 ${
+                              currentQty > 0 ? 'border-primary bg-primary/5' : 'border-border'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold">{flavor.nome}</span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-7 w-7"
+                                  onClick={() => changeEditQuantity(reservation, flavor, -1)}
+                                  disabled={currentQty === 0}
+                                >
+                                  <Minus size={13} />
+                                </Button>
+                                <span className={`w-6 text-center text-sm font-black ${currentQty > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                                  {currentQty}
+                                </span>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-7 w-7 border-primary text-primary"
+                                  onClick={() => changeEditQuantity(reservation, flavor, 1)}
+                                  disabled={!canIncrease}
+                                >
+                                  <Plus size={13} />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="mt-1">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${availableQuantity > 0 || currentInReservation > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                {t('common.availableCount', { count: availableQuantity })}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-1 font-bold"
+                        onClick={() => {
+                          setEditingReservationId(null);
+                          setEditingQuantities({});
+                        }}
+                        disabled={updateReservationItems.isPending}
+                      >
+                        <X size={14} /> {t('reservations.cancelEditing')}
+                      </Button>
+                      <Button
+                        type="button"
+                        className="gap-1 bg-green-500 font-bold text-white hover:bg-green-600"
+                        onClick={() => saveReservationEdit(reservation)}
+                        disabled={updateReservationItems.isPending}
+                      >
+                        <Check size={14} /> {t('common.save')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!isEditing && activeItems.length > 0 && (
                   <div className="mt-3 space-y-1.5 border-t border-border/70 pt-3">
                     {activeItems.map((item, index) => (
                       <div key={`${reservation.id}-${item.sabor_id}-${index}`} className="flex items-center justify-between text-sm font-semibold">

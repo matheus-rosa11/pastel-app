@@ -13,6 +13,7 @@ import {
   initializeDatabase,
   listFlavors,
   listOrders,
+  resetDatabase,
   saveOrderPhoto,
   updateFlavor,
   updateOrder,
@@ -170,6 +171,20 @@ app.get('/api/order-photos/:id', asyncHandler(async (request, response) => {
 app.delete('/api/order-photos/:id', asyncHandler(async (request, response) => {
   await deleteOrderPhoto(request.params.id);
   response.status(204).send();
+}));
+
+app.post('/api/admin/reset-database', asyncHandler(async (request, response) => {
+  const { confirmation } = request.body || {};
+
+  if (confirmation !== 'LIMPAR_BASE_COMPLETA') {
+    response.status(400).json({ error: 'Confirmação inválida para limpeza completa.' });
+    return;
+  }
+
+  await resetDatabase();
+  broadcastRealtimeEvent('orders-changed', { action: 'reset' });
+  broadcastRealtimeEvent('flavors-changed', { action: 'reset' });
+  response.json({ ok: true });
 }));
 
 app.use((error, _request, response, _next) => {

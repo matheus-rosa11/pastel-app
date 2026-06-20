@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
 import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { pastelApp } from '@/api/pastelAppClient';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Progress } from '@/components/ui/progress';
@@ -183,8 +184,29 @@ function RankedList({ items, emptyLabel, renderMeta }) {
 }
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const [preparationWindow, setPreparationWindow] = useState('10');
+  const [resetSelection, setResetSelection] = useState('keep');
+
+  const resetDatabaseMutation = useMutation({
+    mutationFn: () => pastelApp.admin.resetDatabase('LIMPAR_BASE_COMPLETA'),
+    onSuccess: () => {
+      [
+        ['pedidos'],
+        ['pedidos-dashboard'],
+        ['pedidos-edicao'],
+        ['pedidos-entregador'],
+        ['pedidos-fritagem'],
+        ['pedidos-historico'],
+        ['pedidos-reservas'],
+        ['pedidos-numeracao'],
+        ['sabores'],
+        ['sabores-dashboard'],
+      ].forEach((key) => queryClient.invalidateQueries(key));
+      setResetSelection('keep');
+    },
+  });
 
   const { data: pedidos = [], isLoading: isLoadingPedidos } = useQuery({
     queryKey: ['pedidos-dashboard'],
@@ -780,6 +802,38 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-red-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-red-700">{t('dashboard.maintenance.resetTitle')}</CardTitle>
+          <CardDescription>{t('dashboard.maintenance.resetDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Select value={resetSelection} onValueChange={setResetSelection}>
+              <SelectTrigger className="sm:w-[320px] bg-background">
+                <SelectValue placeholder={t('dashboard.maintenance.resetPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="keep">{t('dashboard.maintenance.keepOption')}</SelectItem>
+                <SelectItem value="confirm">{t('dashboard.maintenance.confirmOption')}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => resetDatabaseMutation.mutate()}
+              disabled={resetSelection !== 'confirm' || resetDatabaseMutation.isPending}
+            >
+              {t('dashboard.maintenance.resetAction')}
+            </Button>
+          </div>
+          <p className="text-xs font-semibold text-muted-foreground">
+            {t('dashboard.maintenance.resetHint')}
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

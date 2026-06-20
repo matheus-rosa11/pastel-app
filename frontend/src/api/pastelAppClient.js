@@ -94,6 +94,14 @@ export const pastelApp = {
       }
     },
   },
+  admin: {
+    async resetDatabase(confirmation) {
+      return apiRequest('/admin/reset-database', {
+        method: 'POST',
+        body: { confirmation },
+      });
+    },
+  },
   entities: {
     Pedido: createEntityApi('Pedido'),
     Sabor: createEntityApi('Sabor'),

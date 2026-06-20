@@ -701,6 +701,37 @@ export async function deleteOrderPhoto(photoId) {
   await pool.query('DELETE FROM order_photos WHERE id = $1', [photoId]);
 }
 
+export async function resetDatabase() {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    await client.query('DELETE FROM order_items');
+    await client.query('DELETE FROM orders');
+    await client.query('DELETE FROM order_photos');
+    await client.query('DELETE FROM flavors');
+
+    for (const flavor of seedFlavors) {
+      await client.query(
+        `
+          INSERT INTO flavors (id, nome, descricao, disponivel, quantidade_disponivel)
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+        [randomUUID(), flavor.nome, flavor.descricao, flavor.disponivel, flavor.quantidade_disponivel],
+      );
+    }
+
+    await client.query('COMMIT');
+    return { ok: true };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function closePool() {
   await pool.end();
 }

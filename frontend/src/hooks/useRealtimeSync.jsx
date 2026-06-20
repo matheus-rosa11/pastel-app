@@ -4,11 +4,13 @@ import { API_EVENTS_URL } from '@/api/pastelAppClient';
 
 const ORDER_QUERY_KEYS = [
   ['pedidos'],
+  ['pedidos-numeracao'],
   ['pedidos-dashboard'],
   ['pedidos-edicao'],
   ['pedidos-entregador'],
   ['pedidos-fritagem'],
   ['pedidos-historico'],
+  ['pedidos-reservas'],
 ];
 
 const FLAVOR_QUERY_KEYS = [

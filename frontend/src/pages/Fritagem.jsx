@@ -103,6 +103,10 @@ export default function Fritagem() {
     (a, b) => new Date(a.created_date) - new Date(b.created_date)
   );
 
+  useEffect(() => {
+    setNowMs(Date.now());
+  }, [pedidosPendentes.length]);
+
   const pedidoFlavorRows = pedidosOrdenados.flatMap((pedido) => {
     const flavorMap = new Map();
     linhas
@@ -178,6 +182,9 @@ export default function Fritagem() {
                   >
                     <span className="font-semibold text-sm text-foreground truncate">{group.saborNome}</span>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="max-w-[120px] truncate text-xs font-bold text-muted-foreground">
+                        {truncateCustomerName(group.nomeCliente, 18)}
+                      </span>
                       <span className="font-semibold text-sm text-foreground">{t('common.pastelCount', { count: activeCount })}</span>
                       {cancelledCount > 0 && (
                         <span className="text-xs font-black text-red-500">(-{cancelledCount})</span>

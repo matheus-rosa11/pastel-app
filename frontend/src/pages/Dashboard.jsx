@@ -463,7 +463,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="shadow-sm">
+        <Card className="shadow-sm min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>{t('dashboard.sections.preparationInsightsTitle')}</CardTitle>
             <CardDescription>{t('dashboard.sections.preparationInsightsDescription')}</CardDescription>

@@ -75,7 +75,7 @@ export default function Sabores() {
             className="flex-1"
           />
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 items-end">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-1 block">{t('flavors.form.availableQuantity')}</label>
             <Input

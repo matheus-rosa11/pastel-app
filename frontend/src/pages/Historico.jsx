@@ -156,6 +156,11 @@ export default function Historico() {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 pr-2">
+                        {pedido.order_kind === 'reserva' && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
+                            {t('status.reserved')}
+                          </span>
+                        )}
                         <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${cfg.class}`}>
                           <StatusIcon size={11} />
                           {cfg.label}
@@ -220,7 +225,7 @@ export default function Historico() {
           <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3">{t('history.markReady')}</h2>
           <div className="flex flex-col gap-2">
             {pedidos
-              .filter((p) => p.status === 'pendente')
+              .filter((p) => p.status === 'pendente' && p.order_kind === 'pedido')
               .map((pedido) => {
                 const pedidoCounts = getPedidoItemCounts(pedido);
                 return (

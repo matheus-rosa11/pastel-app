@@ -106,6 +106,9 @@ app.get('/api/orders', asyncHandler(async (request, response) => {
   if (request.query.status) {
     filters.status = request.query.status;
   }
+  if (request.query.order_kind) {
+    filters.order_kind = request.query.order_kind;
+  }
 
   const orders = await listOrders({
     filters,

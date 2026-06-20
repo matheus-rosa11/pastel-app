@@ -31,6 +31,7 @@ function serializeFlavor(row) {
 function serializeOrder(orderRow, items = []) {
   return {
     ...orderRow,
+    order_kind: orderRow.order_kind || 'pedido',
     created_date: nowIso(orderRow.created_date),
     queued_at: nowIso(orderRow.queued_at),
     preparation_minutes: orderRow.preparation_minutes == null ? null : Number(orderRow.preparation_minutes),
@@ -240,7 +241,7 @@ async function fetchOrderItemsByOrderIds(client, orderIds) {
 }
 
 function buildOrderListQuery({ filters = {}, sortField = 'created_date', limit }) {
-  const allowedSortFields = new Set(['created_date', 'updated_date', 'numero_pedido', 'nome_cliente', 'status']);
+  const allowedSortFields = new Set(['created_date', 'updated_date', 'numero_pedido', 'nome_cliente', 'status', 'order_kind']);
   const descending = sortField.startsWith('-');
   const rawField = descending ? sortField.slice(1) : sortField;
   const effectiveSortField = allowedSortFields.has(rawField) ? rawField : 'created_date';
@@ -297,6 +298,7 @@ export async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       numero_pedido INTEGER NOT NULL,
       nome_cliente TEXT NOT NULL,
+      order_kind TEXT NOT NULL DEFAULT 'pedido',
       customer_photo_id TEXT REFERENCES order_photos(id) ON DELETE SET NULL,
       delivery_status TEXT,
       status TEXT NOT NULL DEFAULT 'pendente',
@@ -326,6 +328,8 @@ export async function initializeDatabase() {
   `);
 
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ');
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_kind TEXT NOT NULL DEFAULT 'pedido'");
+  await pool.query("UPDATE orders SET order_kind = 'pedido' WHERE order_kind IS NULL");
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparation_minutes INTEGER');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS considered_preparation_minutes INTEGER');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS pronto_at TIMESTAMPTZ');
@@ -467,8 +471,9 @@ export async function createOrder(payload) {
 
     const orderId = randomUUID();
     const nextStatus = payload.status ?? 'pendente';
+    const nextOrderKind = payload.order_kind === 'reserva' ? 'reserva' : 'pedido';
     const items = payload.itens ?? [];
-    const queuedAt = nextStatus === 'pendente' ? new Date() : null;
+    const queuedAt = nextStatus === 'pendente' && nextOrderKind === 'pedido' ? new Date() : null;
 
     await adjustFlavorStocks(client, 'pendente', [], nextStatus, items);
 
@@ -478,18 +483,20 @@ export async function createOrder(payload) {
           id,
           numero_pedido,
           nome_cliente,
+          order_kind,
           customer_photo_id,
           delivery_status,
           status,
           queued_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
       `,
       [
         orderId,
         Number(payload.numero_pedido),
         payload.nome_cliente,
+        nextOrderKind,
         payload.customer_photo_id ?? null,
         payload.delivery_status ?? null,
         nextStatus,
@@ -499,7 +506,9 @@ export async function createOrder(payload) {
 
     await replaceOrderItems(client, orderId, items);
 
-    const estimated_total_minutes = await estimateOrderTotalMinutes(client, items);
+    const estimated_total_minutes = nextOrderKind === 'pedido'
+      ? await estimateOrderTotalMinutes(client, items)
+      : null;
 
     await client.query('COMMIT');
     return {
@@ -539,6 +548,7 @@ export async function updateOrder(id, updates) {
       preparation_minutes: currentOrder.preparation_minutes,
       considered_preparation_minutes: currentOrder.considered_preparation_minutes,
       pronto_at: currentOrder.pronto_at,
+      order_kind: currentOrder.order_kind || 'pedido',
       delivery_status: Object.prototype.hasOwnProperty.call(updates, 'delivery_status')
         ? updates.delivery_status
         : currentOrder.delivery_status,
@@ -583,6 +593,10 @@ export async function updateOrder(id, updates) {
     if (Object.prototype.hasOwnProperty.call(updates, 'nome_cliente')) {
       values.push(updates.nome_cliente);
       fields.push(`nome_cliente = $${values.length}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'order_kind')) {
+      values.push(updates.order_kind === 'reserva' ? 'reserva' : 'pedido');
+      fields.push(`order_kind = $${values.length}`);
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'customer_photo_id')) {
       values.push(updates.customer_photo_id ?? null);

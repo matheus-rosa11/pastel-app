@@ -46,7 +46,7 @@ export default function EdicaoPedido() {
 
   const { data: pedidos = [], isLoading } = useQuery({
     queryKey: ['pedidos-edicao'],
-    queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pendente' }, 'created_date', 200),
+    queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pendente', order_kind: 'pedido' }, 'created_date', 200),
   });
 
   const { data: sabores = [] } = useQuery({

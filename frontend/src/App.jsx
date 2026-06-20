@@ -9,6 +9,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Layout from './components/Layout';
 import Sabores from './pages/Sabores';
 import Pedidos from './pages/Pedidos';
+import Reservas from './pages/Reservas';
 import Fritagem from './pages/Fritagem';
 import EdicaoPedido from './pages/EdicaoPedido';
 import Historico from './pages/Historico';
@@ -51,6 +52,7 @@ const AuthenticatedApp = () => {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/sabores" element={<Sabores />} />
           <Route path="/pedidos" element={<Pedidos />} />
+          <Route path="/reservas" element={<Reservas />} />
           <Route path="/fritagem" element={<Fritagem />} />
           <Route path="/entregador" element={<Entregador />} />
           <Route path="/edicao" element={<EdicaoPedido />} />

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { pastelApp } from '@/api/pastelAppClient';
 import { Button } from '@/components/ui/button';
 import { deleteOrderPhoto, getOrderPhotoBlob } from '@/lib/orderPhotoStore';
-import { getDeliveryStatus, isPendingDelivery } from '@/lib/deliveryStatus';
+import { isPendingDelivery } from '@/lib/deliveryStatus';
 
 function OrderPhoto({ photoId, alt, className }) {
   const [photoUrl, setPhotoUrl] = useState('');
@@ -147,7 +147,7 @@ export default function Entregador() {
 
   const { data: pedidos = [], isLoading } = useQuery({
     queryKey: ['pedidos-entregador'],
-    queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pronto' }, '-updated_date', 200),
+    queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pronto', order_kind: 'pedido' }, '-updated_date', 200),
     refetchInterval: 10000,
   });
 

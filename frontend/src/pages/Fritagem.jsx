@@ -63,24 +63,33 @@ export default function Fritagem() {
     refetchInterval: 1000,
   });
 
+  const pedidosPendentes = pedidos.filter(
+    (pedido) => pedido.order_kind === 'pedido' || pedido.order_kind === 'reserva'
+  );
+
   const marcarPronto = useMutation({
-    mutationFn: (id) => pastelApp.entities.Pedido.update(id, { status: 'pronto', delivery_status: 'pending_delivery' }),
+    mutationFn: (pedido) => pastelApp.entities.Pedido.update(pedido.id, {
+      status: 'pronto',
+      delivery_status: pedido.order_kind === 'reserva' ? 'not_delivered' : 'pending_delivery',
+    }),
     onSuccess: () => {
       qc.invalidateQueries(['pedidos-fritagem']);
       qc.invalidateQueries(['pedidos-historico']);
       qc.invalidateQueries(['pedidos-entregador']);
+      qc.invalidateQueries(['pedidos-reservas']);
     },
   });
 
   // Expande todos os itens em linhas individuais, mantendo ordem de criação do pedido
   // Itens cancelados aparecem taxados, adicionados aparecem com label
-  const linhas = pedidos.flatMap((pedido) =>
+  const linhas = pedidosPendentes.flatMap((pedido) =>
     (pedido.itens || []).flatMap((item) =>
       Array.from({ length: item.quantidade }, (_, idx) => ({
         key: `${pedido.id}-${item.sabor_id}-${item.status_item || 'ativo'}-${idx}`,
         pedidoId: pedido.id,
         numeroPedido: String(pedido.numero_pedido).padStart(3, '0'),
         nomeCliente: pedido.nome_cliente,
+        orderKind: pedido.order_kind || 'pedido',
         saborNome: item.sabor_nome,
         statusItem: item.status_item || 'ativo',
       }))
@@ -90,7 +99,7 @@ export default function Fritagem() {
   // Conta apenas os ativos/adicionados para o badge de total
   const totalAtivos = linhas.filter((l) => l.statusItem !== 'cancelado').length;
 
-  const pedidosOrdenados = [...pedidos].sort(
+  const pedidosOrdenados = [...pedidosPendentes].sort(
     (a, b) => new Date(a.created_date) - new Date(b.created_date)
   );
 
@@ -110,6 +119,7 @@ export default function Fritagem() {
       pedidoId: pedido.id,
       numeroPedido: String(pedido.numero_pedido).padStart(3, '0'),
       nomeCliente: pedido.nome_cliente,
+      orderKind: pedido.order_kind || 'pedido',
       isLastOfOrder: idx === flavors.length - 1,
       expandKey: `${pedido.id}-${g.saborNome}`,
     }));
@@ -175,6 +185,11 @@ export default function Fritagem() {
                       {addedCount > 0 && (
                         <span className="text-xs font-black text-green-600">(+{addedCount})</span>
                       )}
+                      {group.orderKind === 'reserva' && (
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                          {t('status.reserved')}
+                        </span>
+                      )}
                       <span className="font-black text-sm text-primary">{group.numeroPedido}</span>
                       <ChevronRight
                         size={16}
@@ -238,6 +253,11 @@ export default function Fritagem() {
                           <span className="font-black text-primary text-lg">{String(pedido.numero_pedido).padStart(3, '0')}</span>
                           <span className="font-bold text-foreground">{pedido.nome_cliente}</span>
                           <span className="text-xs text-muted-foreground font-semibold">{t('common.pastelCount', { count: totalItens })}</span>
+                          {pedido.order_kind === 'reserva' && (
+                            <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                              {t('status.reserved')}
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-700">
                             <Clock3 size={12} />
                             <span>{queueTimer}</span>
@@ -247,7 +267,7 @@ export default function Fritagem() {
                       <Button
                         size="sm"
                         className="bg-green-500 hover:bg-green-600 text-white font-bold gap-1"
-                        onClick={() => marcarPronto.mutate(pedido.id)}
+                        onClick={() => marcarPronto.mutate(pedido)}
                         disabled={marcarPronto.isPending}
                       >
                         <CheckCircle2 size={15} /> {t('common.ready')}

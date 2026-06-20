@@ -1,11 +1,12 @@
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { LayoutDashboard, UtensilsCrossed, ClipboardList, Flame, FileEdit, History, Bike } from 'lucide-react';
+import { LayoutDashboard, UtensilsCrossed, ClipboardList, Flame, FileEdit, History, Bike, BookmarkPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const navItems = [
   { path: '/dashboard', labelKey: 'layout.nav.dashboard', icon: LayoutDashboard },
   { path: '/sabores', labelKey: 'layout.nav.flavors', icon: UtensilsCrossed },
   { path: '/pedidos', labelKey: 'layout.nav.orders', icon: ClipboardList },
+  { path: '/reservas', labelKey: 'layout.nav.reservations', icon: BookmarkPlus },
   { path: '/fritagem', labelKey: 'layout.nav.frying', icon: Flame },
   { path: '/entregador', labelKey: 'layout.nav.delivery', icon: Bike },
   { path: '/edicao', labelKey: 'layout.nav.editing', icon: FileEdit },

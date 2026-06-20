@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Bike,
   ClipboardList,
-  Clock3,
   Flame,
   LayoutDashboard,
   Package,
@@ -189,7 +188,7 @@ export default function Dashboard() {
 
   const { data: pedidos = [], isLoading: isLoadingPedidos } = useQuery({
     queryKey: ['pedidos-dashboard'],
-    queryFn: () => pastelApp.entities.Pedido.list('-updated_date', 500),
+    queryFn: () => pastelApp.entities.Pedido.filter({ order_kind: 'pedido' }, '-updated_date', 500),
     refetchInterval: 15000,
   });
 
@@ -408,6 +407,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Link to="/pedidos" className="rounded-xl border border-border bg-background px-3 py-2 text-center text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary">
               {t('dashboard.quickActions.orders')}
+            </Link>
+            <Link to="/reservas" className="rounded-xl border border-border bg-background px-3 py-2 text-center text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary">
+              {t('dashboard.quickActions.reservations')}
             </Link>
             <Link to="/fritagem" className="rounded-xl border border-border bg-background px-3 py-2 text-center text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary">
               {t('dashboard.quickActions.frying')}

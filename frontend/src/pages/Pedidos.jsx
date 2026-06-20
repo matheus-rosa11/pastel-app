@@ -170,8 +170,8 @@ export default function Pedidos() {
   });
 
   const { data: pedidos = [] } = useQuery({
-    queryKey: ['pedidos'],
-    queryFn: () => pastelApp.entities.Pedido.list('-created_date', 100),
+    queryKey: ['pedidos-numeracao'],
+    queryFn: () => pastelApp.entities.Pedido.list('-created_date', 500),
   });
 
   const criarPedido = useMutation({
@@ -411,6 +411,7 @@ export default function Pedidos() {
       itens: itensSelecionados,
       numero_pedido: proximoNumero(),
       status: 'pendente',
+      order_kind: 'pedido',
     });
     setIsPaymentPromptOpen(true);
   };

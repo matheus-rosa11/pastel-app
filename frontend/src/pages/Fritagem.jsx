@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pastelApp } from '@/api/pastelAppClient';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Clock3, Flame } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Clock3, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 
@@ -33,6 +33,19 @@ export default function Fritagem() {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [expandedFlavors, setExpandedFlavors] = useState(new Set());
+
+  const toggleFlavor = (saborNome) => {
+    setExpandedFlavors((prev) => {
+      const next = new Set(prev);
+      if (next.has(saborNome)) {
+        next.delete(saborNome);
+      } else {
+        next.add(saborNome);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -47,7 +60,7 @@ export default function Fritagem() {
   const { data: pedidos = [], isLoading } = useQuery({
     queryKey: ['pedidos-fritagem'],
     queryFn: () => pastelApp.entities.Pedido.filter({ status: 'pendente' }, 'created_date', 200),
-    refetchInterval: 10000,
+    refetchInterval: 1000,
   });
 
   const marcarPronto = useMutation({
@@ -81,6 +94,27 @@ export default function Fritagem() {
     (a, b) => new Date(a.created_date) - new Date(b.created_date)
   );
 
+  const pedidoFlavorRows = pedidosOrdenados.flatMap((pedido) => {
+    const flavorMap = new Map();
+    linhas
+      .filter((l) => l.pedidoId === pedido.id)
+      .forEach((linha) => {
+        if (!flavorMap.has(linha.saborNome)) {
+          flavorMap.set(linha.saborNome, { saborNome: linha.saborNome, linhas: [] });
+        }
+        flavorMap.get(linha.saborNome).linhas.push(linha);
+      });
+    const flavors = Array.from(flavorMap.values());
+    return flavors.map((g, idx) => ({
+      ...g,
+      pedidoId: pedido.id,
+      numeroPedido: String(pedido.numero_pedido).padStart(3, '0'),
+      nomeCliente: pedido.nome_cliente,
+      isLastOfOrder: idx === flavors.length - 1,
+      expandKey: `${pedido.id}-${g.saborNome}`,
+    }));
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -111,45 +145,73 @@ export default function Fritagem() {
         <div className="space-y-6">
           {/* Tabela de pastéis */}
           <div className="bg-card rounded-xl shadow-md border border-border overflow-hidden">
-            <div className="bg-primary/10 grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr] px-4 py-2 border-b border-border">
+            <div className="bg-primary/10 grid grid-cols-[1fr_auto] px-4 py-2 border-b border-border">
               <span className="font-black text-xs uppercase tracking-widest text-primary">{t('common.flavor')}</span>
               <span className="font-black text-xs uppercase tracking-widest text-primary text-right">{t('common.order')}</span>
             </div>
-            <AnimatePresence>
-              {linhas.map((linha, index) => {
-                const cancelado = linha.statusItem === 'cancelado';
-                const adicionado = linha.statusItem === 'adicionado';
-                const proximaLinha = linhas[index + 1];
-                const encerraPedido = !proximaLinha || proximaLinha.pedidoId !== linha.pedidoId;
-                return (
-                  <motion.div
-                    key={linha.key}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    transition={{ delay: index * 0.02 }}
-                    className={`grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr] px-4 py-3 border-b ${
-                      encerraPedido ? 'border-b-2 border-orange-400/90' : 'border-border'
-                    } last:border-0 ${
-                      index % 2 === 0 ? 'bg-card' : 'bg-muted/40'
-                    } ${cancelado ? 'opacity-50' : ''}`}
+            {pedidoFlavorRows.map((group, groupIndex) => {
+              const activeCount = group.linhas.filter((l) => l.statusItem !== 'cancelado').length;
+              const cancelledCount = group.linhas.filter((l) => l.statusItem === 'cancelado').length;
+              const addedCount = group.linhas.filter((l) => l.statusItem === 'adicionado').length;
+              const isExpanded = expandedFlavors.has(group.expandKey);
+              return (
+                <div
+                  key={group.expandKey}
+                  className={`border-b ${
+                    group.isLastOfOrder ? 'border-b-2 border-orange-400/90' : 'border-border'
+                  } last:border-0`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleFlavor(group.expandKey)}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-primary/5 transition-colors ${groupIndex % 2 === 0 ? 'bg-card' : 'bg-muted/40'}`}
                   >
-                    <span className={`font-semibold text-sm ${cancelado ? 'line-through text-muted-foreground' : ''}`}>
-                      {linha.saborNome}
-                      {cancelado && <span className="ml-1 text-xs font-bold text-red-500 no-underline" style={{textDecoration:'none'}}>({t('common.cancelled').toLowerCase()})</span>}
-                      {adicionado && <span className="ml-1 text-xs font-bold text-primary">({t('common.added').toLowerCase()})</span>}
-                    </span>
-                    <div className="text-right">
-                      <span className="font-black text-primary">{linha.numeroPedido}</span>
-                      <span className="block text-[11px] text-muted-foreground font-semibold sm:hidden">
-                        {truncateCustomerName(linha.nomeCliente)}
-                      </span>
-                      <span className="text-xs text-muted-foreground font-semibold ml-1 hidden sm:inline">– {linha.nomeCliente}</span>
+                    <span className="font-semibold text-sm text-foreground truncate">{group.saborNome}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="font-semibold text-sm text-foreground">{t('common.pastelCount', { count: activeCount })}</span>
+                      {cancelledCount > 0 && (
+                        <span className="text-xs font-black text-red-500">(-{cancelledCount})</span>
+                      )}
+                      {addedCount > 0 && (
+                        <span className="text-xs font-black text-green-600">(+{addedCount})</span>
+                      )}
+                      <span className="font-black text-sm text-primary">{group.numeroPedido}</span>
+                      <ChevronRight
+                        size={16}
+                        className={`text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      />
                     </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-border/50">
+                      {group.linhas.map((linha, lineIndex) => {
+                        const cancelado = linha.statusItem === 'cancelado';
+                        const adicionado = linha.statusItem === 'adicionado';
+                        return (
+                          <div
+                            key={linha.key}
+                            className={`grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr] pl-8 pr-4 py-2.5 border-b border-border/60 last:border-0 ${cancelado ? 'opacity-50' : ''} ${lineIndex % 2 === 0 ? 'bg-muted/20' : 'bg-muted/40'}`}
+                          >
+                            <span className={`font-semibold text-sm ${cancelado ? 'line-through text-muted-foreground' : ''}`}>
+                              {linha.saborNome}
+                              {cancelado && <span className="ml-1 text-xs font-bold text-red-500" style={{ textDecoration: 'none' }}>({t('common.cancelled').toLowerCase()})</span>}
+                              {adicionado && <span className="ml-1 text-xs font-bold text-primary">({t('common.added').toLowerCase()})</span>}
+                            </span>
+                            <div className="text-right">
+                              <span className="font-black text-primary">{linha.numeroPedido}</span>
+                              <span className="block text-[11px] text-muted-foreground font-semibold sm:hidden">
+                                {truncateCustomerName(linha.nomeCliente)}
+                              </span>
+                              <span className="text-xs text-muted-foreground font-semibold ml-1 hidden sm:inline">– {linha.nomeCliente}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Botões de conclusão por pedido */}
